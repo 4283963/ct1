@@ -49,13 +49,15 @@ class DeviceRepository:
                 FeederSchedule(
                     id=str(uuid.uuid4()),
                     time=time(8, 0),
-                    portion=2,
+                    grams=3.0,
+                    weekdays=[0, 1, 2, 3, 4, 5, 6],
                     enabled=True,
                 ),
                 FeederSchedule(
                     id=str(uuid.uuid4()),
                     time=time(18, 0),
-                    portion=2,
+                    grams=2.5,
+                    weekdays=[0, 1, 2, 3, 4],
                     enabled=True,
                 ),
             ],
@@ -155,14 +157,42 @@ class DeviceRepository:
             device.last_updated = datetime.now()
             return device
 
+    async def update_feeder_schedule(
+        self,
+        device_id: str,
+        schedule_id: str,
+        *,
+        feed_time: Optional[time] = None,
+        grams: Optional[float] = None,
+        weekdays: Optional[List[int]] = None,
+        enabled: Optional[bool] = None,
+    ) -> Optional[FeederDevice]:
+        async with self._lock:
+            device = self._devices.get(device_id)
+            if not device or not isinstance(device, FeederDevice):
+                return None
+            for s in device.schedules:
+                if s.id == schedule_id:
+                    if feed_time is not None:
+                        s.time = feed_time
+                    if grams is not None:
+                        s.grams = max(0.0, grams)
+                    if weekdays is not None:
+                        s.weekdays = sorted(set(d for d in weekdays if 0 <= d <= 6))
+                    if enabled is not None:
+                        s.enabled = enabled
+                    break
+            device.last_updated = datetime.now()
+            return device
+
     async def trigger_feed_now(
-        self, device_id: str, portion: int = 1
+        self, device_id: str, grams: float = 2.0
     ) -> Optional[FeederDevice]:
         async with self._lock:
             device = self._devices.get(device_id)
             if not device or not isinstance(device, FeederDevice):
                 return None
             device.last_feed = datetime.now()
-            device.food_remaining = max(0.0, device.food_remaining - portion * 2.0)
+            device.food_remaining = max(0.0, device.food_remaining - max(0.0, grams))
             device.last_updated = datetime.now()
             return device

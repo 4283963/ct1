@@ -1,6 +1,6 @@
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Query, Depends, Body
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ...models import Device, DeviceType, DeviceStatus, FeederSchedule
 from ...services import DeviceService
@@ -31,12 +31,20 @@ class HeaterTempUpdate(BaseModel):
 
 class FeederScheduleCreate(BaseModel):
     time: str
-    portion: int = 1
+    grams: float = Field(2.0, ge=0.0, le=50.0)
+    weekdays: List[int] = Field(default_factory=lambda: [0, 1, 2, 3, 4, 5, 6])
     enabled: bool = True
 
 
+class FeederScheduleUpdate(BaseModel):
+    time: Optional[str] = None
+    grams: Optional[float] = Field(None, ge=0.0, le=50.0)
+    weekdays: Optional[List[int]] = None
+    enabled: Optional[bool] = None
+
+
 class ManualFeedRequest(BaseModel):
-    portion: int = 1
+    grams: float = Field(2.0, ge=0.1, le=50.0)
 
 
 @router.get("", response_model=List[Device])
@@ -118,7 +126,29 @@ async def add_feeder_schedule(
     schedule: FeederScheduleCreate,
     service: DeviceService = Depends(get_device_service),
 ):
-    device = await service.add_feeder_schedule(device_id, schedule.time, schedule.portion, schedule.enabled)
+    device = await service.add_feeder_schedule(
+        device_id, schedule.time, schedule.grams, schedule.weekdays, schedule.enabled
+    )
+    if not device:
+        raise HTTPException(status_code=404, detail=f"喂食机 {device_id} 不存在或时间格式错误")
+    return device
+
+
+@router.put("/{device_id}/feeder/schedules/{schedule_id}", response_model=Device)
+async def update_feeder_schedule(
+    device_id: str,
+    schedule_id: str,
+    update: FeederScheduleUpdate,
+    service: DeviceService = Depends(get_device_service),
+):
+    device = await service.update_feeder_schedule(
+        device_id,
+        schedule_id,
+        schedule_time=update.time,
+        grams=update.grams,
+        weekdays=update.weekdays,
+        enabled=update.enabled,
+    )
     if not device:
         raise HTTPException(status_code=404, detail=f"喂食机 {device_id} 不存在或时间格式错误")
     return device
@@ -154,7 +184,7 @@ async def trigger_manual_feed(
     request: ManualFeedRequest = Body(default=ManualFeedRequest()),
     service: DeviceService = Depends(get_device_service),
 ):
-    device = await service.trigger_manual_feed(device_id, request.portion)
+    device = await service.trigger_manual_feed(device_id, request.grams)
     if not device:
         raise HTTPException(
             status_code=400,

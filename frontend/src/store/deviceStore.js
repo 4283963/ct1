@@ -126,12 +126,17 @@ export const useDeviceStore = create((set, get) => ({
     }
   },
 
-  addFeederSchedule: async (deviceId, time, portion = 1, enabled = true) => {
+  addFeederSchedule: async (deviceId, payload) => {
     try {
       const res = await fetch(`/api/v1/devices/${deviceId}/feeder/schedules`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ time, portion, enabled }),
+        body: JSON.stringify({
+          time: payload.time,
+          grams: payload.grams ?? 2.0,
+          weekdays: payload.weekdays ?? [0, 1, 2, 3, 4, 5, 6],
+          enabled: payload.enabled ?? true,
+        }),
       })
       if (!res.ok) throw new Error('添加喂食计划失败')
       const data = await res.json()
@@ -140,6 +145,29 @@ export const useDeviceStore = create((set, get) => ({
     } catch (error) {
       if (error.name === 'AbortError') return null
       console.error('添加喂食计划失败:', error)
+      throw error
+    }
+  },
+
+  updateFeederSchedule: async (deviceId, scheduleId, payload) => {
+    try {
+      const body = {}
+      if (payload.time !== undefined) body.time = payload.time
+      if (payload.grams !== undefined) body.grams = payload.grams
+      if (payload.weekdays !== undefined) body.weekdays = payload.weekdays
+      if (payload.enabled !== undefined) body.enabled = payload.enabled
+      const res = await fetch(`/api/v1/devices/${deviceId}/feeder/schedules/${scheduleId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) throw new Error('更新喂食计划失败')
+      const data = await res.json()
+      get().updateDevice(data)
+      return data
+    } catch (error) {
+      if (error.name === 'AbortError') return null
+      console.error('更新喂食计划失败:', error)
       throw error
     }
   },
@@ -176,12 +204,12 @@ export const useDeviceStore = create((set, get) => ({
     }
   },
 
-  triggerManualFeed: async (deviceId, portion = 1) => {
+  triggerManualFeed: async (deviceId, grams = 2.0) => {
     try {
       const res = await fetch(`/api/v1/devices/${deviceId}/feeder/feed`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ portion }),
+        body: JSON.stringify({ grams }),
       })
       if (!res.ok) throw new Error('手动喂食失败')
       const data = await res.json()

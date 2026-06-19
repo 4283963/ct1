@@ -38,11 +38,41 @@ class HeaterDevice(Device):
     max_temp: float = 32.0
 
 
+WEEKDAY_LABELS = {
+    0: "周一",
+    1: "周二",
+    2: "周三",
+    3: "周四",
+    4: "周五",
+    5: "周六",
+    6: "周日",
+}
+
+
 class FeederSchedule(BaseModel):
+    model_config = {"from_attributes": True}
+
     id: str
     time: time
-    portion: int = 1
+    grams: float = 2.0
+    weekdays: List[int] = Field(default_factory=lambda: [0, 1, 2, 3, 4, 5, 6])
     enabled: bool = True
+
+    @property
+    def weekdays_label(self) -> str:
+        if len(self.weekdays) == 7:
+            return "每天"
+        if set(self.weekdays) == {0, 1, 2, 3, 4}:
+            return "工作日"
+        if set(self.weekdays) == {5, 6}:
+            return "周末"
+        return "、".join(WEEKDAY_LABELS.get(d, str(d)) for d in sorted(self.weekdays))
+
+    def model_dump(self, **kwargs):
+        data = super().model_dump(**kwargs)
+        data["weekdays_label"] = self.weekdays_label
+        data["time"] = self.time.strftime("%H:%M")
+        return data
 
 
 class FeederDevice(Device):

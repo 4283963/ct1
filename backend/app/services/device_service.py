@@ -46,7 +46,12 @@ class DeviceService:
         return await self._repo.update_heater(device_id, target_temp)
 
     async def add_feeder_schedule(
-        self, device_id: str, schedule_time: str, portion: int = 1, enabled: bool = True
+        self,
+        device_id: str,
+        schedule_time: str,
+        grams: float = 2.0,
+        weekdays: Optional[List[int]] = None,
+        enabled: bool = True,
     ) -> Optional[FeederDevice]:
         try:
             hour, minute = map(int, schedule_time.split(":"))
@@ -54,12 +59,40 @@ class DeviceService:
             schedule = FeederSchedule(
                 id="",
                 time=dt_time(hour=hour, minute=minute),
-                portion=portion,
+                grams=max(0.0, grams),
+                weekdays=sorted(set(d for d in (weekdays or [0, 1, 2, 3, 4, 5, 6]) if 0 <= d <= 6)),
                 enabled=enabled,
             )
             return await self._repo.add_feeder_schedule(device_id, schedule)
         except (ValueError, AttributeError):
             return None
+
+    async def update_feeder_schedule(
+        self,
+        device_id: str,
+        schedule_id: str,
+        *,
+        schedule_time: Optional[str] = None,
+        grams: Optional[float] = None,
+        weekdays: Optional[List[int]] = None,
+        enabled: Optional[bool] = None,
+    ) -> Optional[FeederDevice]:
+        feed_time = None
+        if schedule_time is not None:
+            try:
+                hour, minute = map(int, schedule_time.split(":"))
+                from datetime import time as dt_time
+                feed_time = dt_time(hour=hour, minute=minute)
+            except (ValueError, AttributeError):
+                return None
+        return await self._repo.update_feeder_schedule(
+            device_id,
+            schedule_id,
+            feed_time=feed_time,
+            grams=grams,
+            weekdays=weekdays,
+            enabled=enabled,
+        )
 
     async def remove_feeder_schedule(self, device_id: str, schedule_id: str) -> Optional[FeederDevice]:
         return await self._repo.remove_feeder_schedule(device_id, schedule_id)
@@ -67,13 +100,13 @@ class DeviceService:
     async def toggle_feeder_schedule(self, device_id: str, schedule_id: str) -> Optional[FeederDevice]:
         return await self._repo.toggle_feeder_schedule(device_id, schedule_id)
 
-    async def trigger_manual_feed(self, device_id: str, portion: int = 1) -> Optional[FeederDevice]:
+    async def trigger_manual_feed(self, device_id: str, grams: float = 2.0) -> Optional[FeederDevice]:
         device = self._repo.get_by_id(device_id)
         if not device or not isinstance(device, FeederDevice):
             return None
         if device.status != DeviceStatus.ON:
             return None
-        return await self._repo.trigger_feed_now(device_id, portion)
+        return await self._repo.trigger_feed_now(device_id, grams)
 
     async def simulate_heater_reading(self) -> List[HeaterDevice]:
         heaters = self._repo.get_by_type(DeviceType.HEATER)
