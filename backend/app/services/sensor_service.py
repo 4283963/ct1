@@ -19,7 +19,7 @@ class SensorService:
     def get_sensors_by_type(self, sensor_type: SensorType) -> List[SensorData]:
         return self._repo.get_by_type(sensor_type)
 
-    def simulate_sensor_readings(self) -> List[SensorData]:
+    async def simulate_sensor_readings(self) -> List[SensorData]:
         sensors = self._repo.get_all()
         updated = []
         for sensor in sensors:
@@ -29,7 +29,7 @@ class SensorService:
                 timestamp=datetime.now(),
                 unit=sensor.current.unit,
             )
-            updated_sensor = self._repo.update_reading(sensor.sensor_id, reading)
+            updated_sensor = await self._repo.update_reading(sensor.sensor_id, reading)
             if updated_sensor:
                 updated.append(updated_sensor)
         return updated

@@ -57,7 +57,7 @@ async def refresh_sensor(
     sensor = service.get_sensor_by_id(sensor_id)
     if not sensor:
         raise HTTPException(status_code=404, detail=f"传感器 {sensor_id} 不存在")
-    updated = service.simulate_sensor_readings()
+    updated = await service.simulate_sensor_readings()
     for s in updated:
         if s.sensor_id == sensor_id:
             return s

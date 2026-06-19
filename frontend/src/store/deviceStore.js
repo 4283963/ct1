@@ -4,6 +4,7 @@ export const useDeviceStore = create((set, get) => ({
   devices: [],
   isLoading: false,
   error: null,
+  _pendingRequests: new Map(),
 
   setDevices: (devices) => set({ devices }),
 
@@ -26,6 +27,31 @@ export const useDeviceStore = create((set, get) => ({
     })
     return { devices: Array.from(deviceMap.values()) }
   }),
+
+  optimisticUpdate: (deviceId, patch) => set((state) => {
+    const idx = state.devices.findIndex(d => d.device_id === deviceId)
+    if (idx < 0) return state
+    const newDevices = [...state.devices]
+    newDevices[idx] = { ...newDevices[idx], ...patch }
+    return { devices: newDevices }
+  }),
+
+  _abortPendingRequest: (key) => {
+    const pending = get()._pendingRequests
+    if (pending.has(key)) {
+      const controller = pending.get(key)
+      controller.abort()
+      pending.delete(key)
+    }
+  },
+
+  _registerPendingRequest: (key, controller) => {
+    get()._pendingRequests.set(key, controller)
+  },
+
+  _clearPendingRequest: (key) => {
+    get()._pendingRequests.delete(key)
+  },
 
   fetchDevices: async () => {
     set({ isLoading: true, error: null })
@@ -50,40 +76,51 @@ export const useDeviceStore = create((set, get) => ({
       get().updateDevice(data)
       return data
     } catch (error) {
+      if (error.name === 'AbortError') return null
       console.error('切换设备状态失败:', error)
       throw error
     }
   },
 
-  setPumpPower: async (deviceId, powerLevel) => {
+  setPumpPower: async (deviceId, powerLevel, options = {}) => {
+    const { signal } = options
     try {
       const res = await fetch(`/api/v1/devices/${deviceId}/pump/power`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ power_level: powerLevel }),
+        signal,
       })
       if (!res.ok) throw new Error('设置水泵功率失败')
       const data = await res.json()
-      get().updateDevice(data)
+      if (!signal?.aborted) {
+        get().updateDevice(data)
+      }
       return data
     } catch (error) {
+      if (error.name === 'AbortError') return null
       console.error('设置水泵功率失败:', error)
       throw error
     }
   },
 
-  setHeaterTemperature: async (deviceId, targetTemperature) => {
+  setHeaterTemperature: async (deviceId, targetTemperature, options = {}) => {
+    const { signal } = options
     try {
       const res = await fetch(`/api/v1/devices/${deviceId}/heater/temperature`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ target_temperature: targetTemperature }),
+        signal,
       })
       if (!res.ok) throw new Error('设置加热棒温度失败')
       const data = await res.json()
-      get().updateDevice(data)
+      if (!signal?.aborted) {
+        get().updateDevice(data)
+      }
       return data
     } catch (error) {
+      if (error.name === 'AbortError') return null
       console.error('设置加热棒温度失败:', error)
       throw error
     }
@@ -101,6 +138,7 @@ export const useDeviceStore = create((set, get) => ({
       get().updateDevice(data)
       return data
     } catch (error) {
+      if (error.name === 'AbortError') return null
       console.error('添加喂食计划失败:', error)
       throw error
     }
@@ -116,6 +154,7 @@ export const useDeviceStore = create((set, get) => ({
       get().updateDevice(data)
       return data
     } catch (error) {
+      if (error.name === 'AbortError') return null
       console.error('删除喂食计划失败:', error)
       throw error
     }
@@ -131,6 +170,7 @@ export const useDeviceStore = create((set, get) => ({
       get().updateDevice(data)
       return data
     } catch (error) {
+      if (error.name === 'AbortError') return null
       console.error('切换喂食计划失败:', error)
       throw error
     }
@@ -148,6 +188,7 @@ export const useDeviceStore = create((set, get) => ({
       get().updateDevice(data)
       return data
     } catch (error) {
+      if (error.name === 'AbortError') return null
       console.error('手动喂食失败:', error)
       throw error
     }

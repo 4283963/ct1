@@ -65,7 +65,7 @@ async def toggle_device(
     device_id: str,
     service: DeviceService = Depends(get_device_service),
 ):
-    device = service.toggle_device(device_id)
+    device = await service.toggle_device(device_id)
     if not device:
         raise HTTPException(status_code=404, detail=f"设备 {device_id} 不存在")
     return device
@@ -77,7 +77,7 @@ async def set_device_status(
     update: StatusUpdate,
     service: DeviceService = Depends(get_device_service),
 ):
-    device = service.set_device_status(device_id, update.status)
+    device = await service.set_device_status(device_id, update.status)
     if not device:
         raise HTTPException(status_code=404, detail=f"设备 {device_id} 不存在")
     return device
@@ -91,7 +91,7 @@ async def set_pump_power(
 ):
     if update.power_level < 0 or update.power_level > 100:
         raise HTTPException(status_code=400, detail="功率等级必须在 0-100 之间")
-    device = service.set_pump_power(device_id, update.power_level)
+    device = await service.set_pump_power(device_id, update.power_level)
     if not device:
         raise HTTPException(status_code=404, detail=f"水泵 {device_id} 不存在")
     return device
@@ -103,7 +103,7 @@ async def set_heater_temperature(
     update: HeaterTempUpdate,
     service: DeviceService = Depends(get_device_service),
 ):
-    device = service.set_heater_temperature(device_id, update.target_temperature)
+    device = await service.set_heater_temperature(device_id, update.target_temperature)
     if not device:
         raise HTTPException(
             status_code=400,
@@ -118,7 +118,7 @@ async def add_feeder_schedule(
     schedule: FeederScheduleCreate,
     service: DeviceService = Depends(get_device_service),
 ):
-    device = service.add_feeder_schedule(device_id, schedule.time, schedule.portion, schedule.enabled)
+    device = await service.add_feeder_schedule(device_id, schedule.time, schedule.portion, schedule.enabled)
     if not device:
         raise HTTPException(status_code=404, detail=f"喂食机 {device_id} 不存在或时间格式错误")
     return device
@@ -130,7 +130,7 @@ async def remove_feeder_schedule(
     schedule_id: str,
     service: DeviceService = Depends(get_device_service),
 ):
-    device = service.remove_feeder_schedule(device_id, schedule_id)
+    device = await service.remove_feeder_schedule(device_id, schedule_id)
     if not device:
         raise HTTPException(status_code=404, detail=f"喂食机 {device_id} 不存在")
     return device
@@ -142,7 +142,7 @@ async def toggle_feeder_schedule(
     schedule_id: str,
     service: DeviceService = Depends(get_device_service),
 ):
-    device = service.toggle_feeder_schedule(device_id, schedule_id)
+    device = await service.toggle_feeder_schedule(device_id, schedule_id)
     if not device:
         raise HTTPException(status_code=404, detail=f"喂食机 {device_id} 不存在")
     return device
@@ -154,7 +154,7 @@ async def trigger_manual_feed(
     request: ManualFeedRequest = Body(default=ManualFeedRequest()),
     service: DeviceService = Depends(get_device_service),
 ):
-    device = service.trigger_manual_feed(device_id, request.portion)
+    device = await service.trigger_manual_feed(device_id, request.portion)
     if not device:
         raise HTTPException(
             status_code=400,

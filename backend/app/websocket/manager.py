@@ -29,8 +29,8 @@ class ConnectionManager:
     async def _broadcast_loop(self):
         try:
             while self._active_connections:
-                sensors = self._sensor_service.simulate_sensor_readings()
-                heaters = self._device_service.simulate_heater_reading()
+                sensors = await self._sensor_service.simulate_sensor_readings()
+                heaters = await self._device_service.simulate_heater_reading()
                 message = {
                     "type": "realtime_update",
                     "timestamp": self._get_iso_timestamp(),

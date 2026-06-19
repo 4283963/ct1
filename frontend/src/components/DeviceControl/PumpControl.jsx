@@ -1,27 +1,63 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useDeviceStore } from '../../store/deviceStore'
+import { useDebouncedValue } from '../../hooks/useDebounce'
 
 export default function PumpControl({ device }) {
-  const [loading, setLoading] = useState(false)
+  const [localPower, setLocalPower] = useState(device.power_level ?? 0)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const abortControllerRef = useRef(null)
+
   const toggleDevice = useDeviceStore(state => state.toggleDevice)
   const setPumpPower = useDeviceStore(state => state.setPumpPower)
+  const optimisticUpdate = useDeviceStore(state => state.optimisticUpdate)
 
   const isOn = device.status === 'on'
-  const power = device.power_level ?? 0
+  const storePower = device.power_level ?? 0
+  const debouncedPower = useDebouncedValue(localPower, 300)
 
-  const handleToggle = async () => {
-    setLoading(true)
-    try {
-      await toggleDevice(device.device_id)
-    } finally {
-      setLoading(false)
+  useEffect(() => {
+    setLocalPower(device.power_level ?? 0)
+  }, [device.device_id, device.power_level])
+
+  const submitPower = useCallback(async (power) => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
     }
+
+    const controller = new AbortController()
+    abortControllerRef.current = controller
+
+    setIsSubmitting(true)
+    try {
+      optimisticUpdate(device.device_id, { power_level: power })
+      await setPumpPower(device.device_id, power, { signal: controller.signal })
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        console.error(err)
+        setLocalPower(storePower)
+      }
+    } finally {
+      if (abortControllerRef.current === controller) {
+        setIsSubmitting(false)
+        abortControllerRef.current = null
+      }
+    }
+  }, [device.device_id, storePower, setPumpPower, optimisticUpdate])
+
+  useEffect(() => {
+    if (!isOn) return
+    if (debouncedPower === storePower) return
+    submitPower(debouncedPower)
+  }, [debouncedPower, isOn, storePower, submitPower])
+
+  const handleSliderChange = (e) => {
+    const value = parseInt(e.target.value, 10)
+    setLocalPower(value)
   }
 
-  const handlePowerChange = async (e) => {
-    const value = parseInt(e.target.value, 10)
+  const handleToggle = async () => {
     try {
-      await setPumpPower(device.device_id, value)
+      await toggleDevice(device.device_id)
     } catch (err) {
       console.error(err)
     }
@@ -43,8 +79,7 @@ export default function PumpControl({ device }) {
         </div>
         <button
           onClick={handleToggle}
-          disabled={loading}
-          className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-sky-500 disabled:opacity-50 ${
+          className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-sky-500 ${
             isOn ? 'bg-sky-500' : 'bg-slate-300'
           }`}
         >
@@ -59,14 +94,19 @@ export default function PumpControl({ device }) {
       <div className="mb-4">
         <div className="flex items-center justify-between mb-2">
           <span className="text-sm font-medium text-slate-600">功率</span>
-          <span className="text-sm font-bold text-sky-600">{power}%</span>
+          <span className="text-sm font-bold text-sky-600">
+            {localPower}%
+            {isSubmitting && (
+              <span className="ml-2 text-xs font-normal text-slate-400">保存中...</span>
+            )}
+          </span>
         </div>
         <input
           type="range"
           min="0"
           max="100"
-          value={power}
-          onChange={handlePowerChange}
+          value={localPower}
+          onChange={handleSliderChange}
           disabled={!isOn}
           className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-sky-500 disabled:opacity-50 disabled:cursor-not-allowed"
         />

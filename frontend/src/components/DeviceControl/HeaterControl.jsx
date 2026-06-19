@@ -1,38 +1,78 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useDeviceStore } from '../../store/deviceStore'
+import { useDebouncedValue } from '../../hooks/useDebounce'
 
 export default function HeaterControl({ device }) {
-  const [loading, setLoading] = useState(false)
+  const [localTemp, setLocalTemp] = useState(device.target_temperature ?? 26)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const abortControllerRef = useRef(null)
+
   const toggleDevice = useDeviceStore(state => state.toggleDevice)
   const setHeaterTemperature = useDeviceStore(state => state.setHeaterTemperature)
+  const optimisticUpdate = useDeviceStore(state => state.optimisticUpdate)
 
   const isOn = device.status === 'on'
-  const targetTemp = device.target_temperature ?? 26
+  const storeTemp = device.target_temperature ?? 26
   const currentTemp = device.current_temperature
   const minTemp = device.min_temp ?? 20
   const maxTemp = device.max_temp ?? 32
+  const debouncedTemp = useDebouncedValue(localTemp, 300)
 
-  const handleToggle = async () => {
-    setLoading(true)
-    try {
-      await toggleDevice(device.device_id)
-    } finally {
-      setLoading(false)
+  useEffect(() => {
+    setLocalTemp(device.target_temperature ?? 26)
+  }, [device.device_id, device.target_temperature])
+
+  const submitTemp = useCallback(async (temp) => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
     }
+
+    const controller = new AbortController()
+    abortControllerRef.current = controller
+
+    setIsSubmitting(true)
+    try {
+      optimisticUpdate(device.device_id, { target_temperature: temp })
+      await setHeaterTemperature(device.device_id, temp, { signal: controller.signal })
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        console.error(err)
+        setLocalTemp(storeTemp)
+      }
+    } finally {
+      if (abortControllerRef.current === controller) {
+        setIsSubmitting(false)
+        abortControllerRef.current = null
+      }
+    }
+  }, [device.device_id, storeTemp, setHeaterTemperature, optimisticUpdate])
+
+  useEffect(() => {
+    if (!isOn) return
+    if (Math.abs(debouncedTemp - storeTemp) < 0.01) return
+    submitTemp(debouncedTemp)
+  }, [debouncedTemp, isOn, storeTemp, submitTemp])
+
+  const handleSliderChange = (e) => {
+    const value = parseFloat(e.target.value)
+    setLocalTemp(Math.round(value * 10) / 10)
   }
 
-  const handleTempChange = async (delta) => {
-    const newTemp = Math.max(minTemp, Math.min(maxTemp, targetTemp + delta))
-    if (newTemp === targetTemp) return
+  const handleStep = (delta) => {
+    const newTemp = Math.max(minTemp, Math.min(maxTemp, localTemp + delta))
+    setLocalTemp(Math.round(newTemp * 10) / 10)
+  }
+
+  const handleToggle = async () => {
     try {
-      await setHeaterTemperature(device.device_id, newTemp)
+      await toggleDevice(device.device_id)
     } catch (err) {
       console.error(err)
     }
   }
 
   const tempDiff = currentTemp !== undefined && currentTemp !== null
-    ? (targetTemp - currentTemp).toFixed(1)
+    ? (storeTemp - currentTemp).toFixed(1)
     : null
   const isHeating = isOn && tempDiff !== null && parseFloat(tempDiff) > 0.1
 
@@ -57,8 +97,7 @@ export default function HeaterControl({ device }) {
         </div>
         <button
           onClick={handleToggle}
-          disabled={loading}
-          className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 disabled:opacity-50 ${
+          className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 ${
             isOn ? 'bg-orange-500' : 'bg-slate-300'
           }`}
         >
@@ -72,34 +111,43 @@ export default function HeaterControl({ device }) {
 
       <div className="flex items-center justify-center mb-4">
         <button
-          onClick={() => handleTempChange(-0.5)}
-          disabled={!isOn || targetTemp <= minTemp}
+          onClick={() => handleStep(-0.5)}
+          disabled={!isOn || localTemp <= minTemp}
           className="w-10 h-10 rounded-full bg-slate-100 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center text-2xl font-bold text-slate-600 transition-colors"
         >
           −
         </button>
         <div className="mx-6 text-center">
           <div className="text-5xl font-bold text-slate-800">
-            {targetTemp.toFixed(1)}
+            {localTemp.toFixed(1)}
             <span className="text-2xl text-slate-400 ml-1">°C</span>
           </div>
           <div className="text-sm text-slate-500 mt-1">
             当前: {currentTemp !== undefined && currentTemp !== null ? `${currentTemp.toFixed(1)}°C` : '--'}
+            {isSubmitting && (
+              <span className="ml-2 text-amber-500">保存中...</span>
+            )}
           </div>
         </div>
         <button
-          onClick={() => handleTempChange(0.5)}
-          disabled={!isOn || targetTemp >= maxTemp}
+          onClick={() => handleStep(0.5)}
+          disabled={!isOn || localTemp >= maxTemp}
           className="w-10 h-10 rounded-full bg-slate-100 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center text-2xl font-bold text-slate-600 transition-colors"
         >
           +
         </button>
       </div>
 
-      <div className="w-full bg-slate-200 rounded-full h-2 mb-3 overflow-hidden">
-        <div
-          className="h-2 rounded-full bg-gradient-to-r from-sky-400 via-emerald-400 to-orange-400 transition-all duration-500"
-          style={{ width: `${((targetTemp - minTemp) / (maxTemp - minTemp)) * 100}%` }}
+      <div className="mb-3">
+        <input
+          type="range"
+          min={minTemp}
+          max={maxTemp}
+          step="0.5"
+          value={localTemp}
+          onChange={handleSliderChange}
+          disabled={!isOn}
+          className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-orange-500 disabled:opacity-50 disabled:cursor-not-allowed"
         />
       </div>
       <div className="flex justify-between text-xs text-slate-400">

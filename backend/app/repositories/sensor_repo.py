@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 import random
@@ -7,6 +8,7 @@ from ..models import SensorData, SensorType, SensorReading
 
 class SensorRepository:
     def __init__(self):
+        self._lock = asyncio.Lock()
         self._sensors: Dict[str, SensorData] = self._initialize_mock_sensors()
 
     def _initialize_mock_sensors(self) -> Dict[str, SensorData]:
@@ -88,16 +90,17 @@ class SensorRepository:
     def get_by_type(self, sensor_type: SensorType) -> List[SensorData]:
         return [s for s in self._sensors.values() if s.type == sensor_type]
 
-    def update_reading(self, sensor_id: str, reading: SensorReading) -> Optional[SensorData]:
-        sensor = self._sensors.get(sensor_id)
-        if not sensor:
-            return None
-        sensor.current = reading
-        sensor.history.append(reading)
-        if len(sensor.history) > 120:
-            sensor.history = sensor.history[-120:]
-        sensor.status = self._evaluate_status(sensor)
-        return sensor
+    async def update_reading(self, sensor_id: str, reading: SensorReading) -> Optional[SensorData]:
+        async with self._lock:
+            sensor = self._sensors.get(sensor_id)
+            if not sensor:
+                return None
+            sensor.current = reading
+            sensor.history.append(reading)
+            if len(sensor.history) > 120:
+                sensor.history = sensor.history[-120:]
+            sensor.status = self._evaluate_status(sensor)
+            return sensor
 
     def _evaluate_status(self, sensor: SensorData) -> str:
         value = sensor.current.value
